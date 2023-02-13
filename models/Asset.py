@@ -1,29 +1,32 @@
+from datetime import datetime, timedelta
+
 from pydantic import BaseModel
+import json 
 
 class Asset(BaseModel):
     symbol: str = None
     name: str = None
-    shares: float = 0
-    price: float = 0
-    purchase_price: float = None
+    last_price: float = 0
     currency: str = None
     asset_class: str = None
     industry: str = None
-    yield_expected: float = 0
-    marketplace : str = None
+    created_by: str = None
+    created_at: datetime = None
+    last_updated_by: str = None
+    last_updated_at: datetime = None
     
     def __init__(self, **kwargs):
         super().__init__()
         self.symbol = kwargs.get('symbol', None)
         self.name = kwargs.get('name', None)
-        self.shares = kwargs.get('shares', 0)
-        self.price = kwargs.get('price', 0)
-        self.purchase_price = kwargs.get('purchase_price', None)
+        self.last_price = kwargs.get('last_price', 0)
         self.currency = kwargs.get('currency', "EUR")
         self.asset_class = kwargs.get('asset_class', None)
         self.industry = kwargs.get('industry', None)
-        self.yield_expected = kwargs.get('yield_expected', 0)
-        self.marketplace = kwargs.get('marketplace', None)
+        self.created_by = kwargs.get('created_by', None)
+        self.created_at = kwargs.get('created_at', datetime.now())
+        self.last_updated_by = kwargs.get('last_updated_by', None)
+        self.last_updated_at = kwargs.get('last_updated_at', datetime.now())
 
         
         if None in (self.symbol, self.name):
@@ -33,18 +36,25 @@ class Asset(BaseModel):
     def __str__(self):
         return f"{self.symbol} ({self.name})"
 
-    def cost(self):
-        return self.shares*self.purchase_price
+    def serialize_asset(self):
+        return {
+            'symbol': self.symbol,
+            'name': self.name,
+            'last_price': self.last_price,
+            'currency': self.currency,
+            'asset_class': self.asset_class,
+            'industry': self.industry,
+            'created_by': self.created_by,
+            'created_at': self.created_at,
+            'last_updated_by': self.last_updated_by,
+            'last_updated_at': self.last_updated_at
+        }
+  
 
-    def value(self): 
-        return self.shares*self.price
+ 
+""" asset_details = {"symbol": "ETH","name": "Ethereum","price": 1540,"currency": "USD","asset_class": "Cryptocurrency","industry": "Blockchain","marketplace": None,"user" : "TPUISE"}
+asset = Asset(**asset_details)
 
-
-""" details = {"symbol":"BTC", "name":"Bitcoin","shares" : 0.128318,"price":0,"purchase_price" : 23030,"currency" : "USD","asset_class" : "Cryptocurrency","industry" : "Blockchain"}
-asset = Asset(**details)
-print(asset) 
-print(asset.shares) 
-print(asset.purchase_price) 
-print(asset.currency) 
-print(asset.asset_class) 
-print(asset)  """
+print(asset)
+json_str = json.dumps(asset.__dict__)
+print(json_str) """

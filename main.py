@@ -1,38 +1,31 @@
 from fastapi import FastAPI, Header, HTTPException,  Depends
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+
 from models.Portfolio import Portfolio
 from models.Asset import Asset
-from pydantic import BaseModel
+import Configuration
+from typing import Union,List
+
 import jwt
+
+from pymongo import MongoClient, ReturnDocument, errors
+from pymongo.errors import PyMongoError
+
+
 from datetime import datetime, timedelta
 import json
-import pickle
 
+client = MongoClient(Configuration.mongoDB_str)
+db = client.AssetVision
+assets = db.assets
+portfolios = db.portfolios
 
 app = FastAPI()
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-portfolios = []
-assets = {}
-# {"symbol":"BTC", "name":"Bitcoin","shares" : 0.128318,"price":22000,"purchase_price" : 23030,"currency" : "USD","asset_class" : "Cryptocurrency","industry" : "Blockchain"}
-# {"symbol":"ETH", "name":"Ethereum","shares" : 0.7098,"price":1540,"purchase_price" : 1536,"currency" : "USD","asset_class" : "Cryptocurrency","industry" : "Blockchain"}
-def save_assets(assets, filename="assets_list.txt"):
-    with open(filename, 'wb') as f:
-        pickle.dump(assets, f)
 
-def load_assets(filename="assets_list.txt"):
-    with open(filename, 'rb') as f:
-        return pickle.load(f)
-assets = load_assets()
-
-
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
 
 ####################################################################################################
 #                   Main Page
@@ -96,16 +89,19 @@ async def read_items(token: str = Depends(oauth2_scheme)):
 #                   Unique Asset interactions
 ####################################################################################################
 @app.post("/asset")
-async def create_asset(asset_details, token: str = Depends(oauth2_scheme)):
+async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, asset_class:Union[str, None] = None, industry:Union[str, None] = None,last_price:Union[float, None] = 0, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     username = payload["sub"]
-    asset = Asset(**json.loads(asset_details))
-    assets[asset.symbol] = asset
-    save_assets(assets)
-    return {"message": "Asset created by user "+username}
+    asset = Asset(symbol=symbol,name=name, last_price=last_price, currency=currency, asset_class=asset_class, industry=industry,last_updated_by = username, created_by = username)
+    try:
+        assets.insert_one(asset.serialize_asset())
+        return {"message": f"Asset { symbol } created by { username }"}
+
+    except errors.DuplicateKeyError:
+        return "The asset already exist in the collection."
 
 @app.get("/asset/{asset_symbol}")
 async def read_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
@@ -114,64 +110,93 @@ async def read_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     username = payload["sub"]
-    return assets[asset_symbol]
+    requested_asset = deserialize_asset(assets.find_one({"symbol": asset_symbol}))
+    return requested_asset
 
 @app.put("/asset/{asset_symbol}")
-async def update_asset(asset_symbol, asset_details, token: str = Depends(oauth2_scheme)):
+async def update_asset(asset_symbol, asset_details: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     username = payload["sub"]
-    asset = Asset(**json.loads(asset_details))
-    assets[asset_symbol] = asset
-    save_assets(assets)
-    return {"message": "Asset updated"}
+    try:
+        asset_details = json.loads(asset_details)
+        asset_details["last_updated_by"] = username
+        asset_details["last_updated_at"] = datetime.now()
+        print(asset_details)
+        updated_asset = assets.find_one_and_update(
+            {"symbol": asset_symbol},
+            {"$set": asset_details},
+            return_document=ReturnDocument.AFTER
+        )
+        return {"message": "Asset updated", "updated_asset" : deserialize_asset(updated_asset)}
+    except PyMongoError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
 
 @app.delete("/asset/{asset_symbol}")
-async def delete_asset(asset_symbol: int, token: str = Depends(oauth2_scheme)):
+async def delete_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     username = payload["sub"]
-    assets.pop(asset_symbol)
-    save_assets(assets)
-    return {"message": "Asset deleted"}
-####################################################################################################
-#                   Assets
-####################################################################################################
+    result = assets.delete_one({"symbol": asset_symbol})
+    if result.deleted_count >= 1:
+        return {"message": "Asset deleted"}
+    raise HTTPException(status_code=500, detail="Something went wrong with the deletion")
+
 @app.get("/assets/")
-async def read_assets(token: str = Depends(oauth2_scheme)):
+async def get_all_assets(token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     username = payload["sub"]
-    return assets
+    assets_list = []
+    async for asset in assets.find():
+        assets_list.append(asset)
+    return assets_list
 
-@app.get("/assets/value")
-async def value_of_assets(token: str = Depends(oauth2_scheme)):
-    try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Could not validate credentials")
-    username = payload["sub"]
-    somme = 0
-    for asset in assets.values() : 
-        print(asset)
-        somme += asset.value()
-    return {"total_value" : somme}
 
-@app.get("/assets/cost")
-async def cost_of_assets(token: str = Depends(oauth2_scheme)):
+    
+####################################################################################################
+#                   Portfolios
+####################################################################################################
+@app.post("/portfolio")
+async def create_portfolio(name:str, symbols:List[str] = [], token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     username = payload["sub"]
-    somme = 0
-    for asset in assets.values() : 
-        print(asset)
-        somme += asset.cost()
-    return {"total_value" : somme}
+    asset_in_portfolio = []
+    for i in list(assets.find({"symbol": {"$in": symbols}})):
+        asset_in_portfolio.append(deserialize_asset(i))
+    portfolio = Portfolio(name=name, assets = asset_in_portfolio, owner = username)
+    try:
+        portfolios.insert_one(portfolio.serialize_asset())
+        return {"message": f"Portfolio { name } created by { username }"}
+
+    except errors.DuplicateKeyError:
+        return "The portfolio already exist in the collection."
+
+####################################################################################################
+#                   Useful tools
+####################################################################################################
+def deserialize_asset(data):
+    return Asset(
+        symbol=data['symbol'],
+        name=data['name'],
+        asset_class=data['asset_class'],
+        last_price=data['last_price'],
+        currency=data['currency'],
+        industry=data['industry'],
+        created_by=data['created_by'],
+        created_at=data['created_at'],
+        last_updated_by=data['last_updated_by'],
+        last_updated_at=data['last_updated_at']
+    )
+
+        
