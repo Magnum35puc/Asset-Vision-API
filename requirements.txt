@@ -3,3 +3,4 @@ fastapi
 pydantic
 pyjwt
 python-multipart
+pymongo[snappy,gssapi,srv,tls]
