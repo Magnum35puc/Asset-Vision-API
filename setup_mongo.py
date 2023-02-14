@@ -8,4 +8,5 @@ db = client.AssetVision
 assets = db.assets
 portfolios = db.portfolios
 
-db.assets.create_index([("symbol", ASCENDING)],unique=True)
+assets.create_index([("symbol", ASCENDING)],unique=True)
+portfolios.create_index([("owner", ASCENDING),("name", ASCENDING)], unique=True)

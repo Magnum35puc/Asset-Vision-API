@@ -1,12 +1,14 @@
-from fastapi import FastAPI, Header, HTTPException,  Depends
+from fastapi import FastAPI, HTTPException,  Depends
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 
 from models.Portfolio import Portfolio
+from models.PortfolioRequest import PortfolioRequest
 from models.Asset import Asset
 import Configuration
-from typing import Union,List
+from typing import Union
+from bson.objectid import ObjectId
 
 import jwt
 
@@ -95,13 +97,13 @@ async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, as
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     username = payload["sub"]
-    asset = Asset(symbol=symbol,name=name, last_price=last_price, currency=currency, asset_class=asset_class, industry=industry,last_updated_by = username, created_by = username)
+    asset = Asset(symbol=symbol,name=name, last_price=last_price, currency=currency, asset_class=asset_class, industry=industry,last_updated_by = username, created_by = username, last_updated_at = datetime.now() , created_at = datetime.now())
     try:
-        assets.insert_one(asset.serialize_asset())
+        assets.insert_one(asset.dict())
         return {"message": f"Asset { symbol } created by { username }"}
 
     except errors.DuplicateKeyError:
-        return "The asset already exist in the collection."
+        raise HTTPException(status_code=409, detail="The asset already exist in the collection.")
 
 @app.get("/asset/{asset_symbol}")
 async def read_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
@@ -124,7 +126,6 @@ async def update_asset(asset_symbol, asset_details: str, token: str = Depends(oa
         asset_details = json.loads(asset_details)
         asset_details["last_updated_by"] = username
         asset_details["last_updated_at"] = datetime.now()
-        print(asset_details)
         updated_asset = assets.find_one_and_update(
             {"symbol": asset_symbol},
             {"$set": asset_details},
@@ -134,7 +135,6 @@ async def update_asset(asset_symbol, asset_details: str, token: str = Depends(oa
     except PyMongoError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-
 @app.delete("/asset/{asset_symbol}")
 async def delete_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
@@ -159,32 +159,45 @@ async def get_all_assets(token: str = Depends(oauth2_scheme)):
         assets_list.append(asset)
     return assets_list
 
-
-    
 ####################################################################################################
 #                   Portfolios
 ####################################################################################################
 @app.post("/portfolio")
-async def create_portfolio(name:str, symbols:List[str] = [], token: str = Depends(oauth2_scheme)):
+async def create_portfolio(name:str, portfolio: PortfolioRequest,  token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     username = payload["sub"]
-    asset_in_portfolio = []
-    for i in list(assets.find({"symbol": {"$in": symbols}})):
-        asset_in_portfolio.append(deserialize_asset(i))
-    portfolio = Portfolio(name=name, assets = asset_in_portfolio, owner = username)
+
+    ##User input management
+    #Case Shares not filled by the user
+    if portfolio.shares == [] :
+        portfolio.shares = [0] * len(portfolio.assets_symbols)
+    if len(portfolio.assets_symbols)< len(portfolio.shares) : 
+        portfolio.shares = portfolio.shares[:len(portfolio.assets_symbols)]
+    #Case Shares partially filled
+    while len(portfolio.assets_symbols)> len(portfolio.shares): 
+        portfolio.shares.append(0)
+    #Creation of the portfolio content
+    portfolio_content= {}
+    for (index, symb) in enumerate(portfolio.assets_symbols) : 
+        id = assets.find_one({"symbol": symb})["_id"]
+        portfolio_content[symb] = {"asset_id":ObjectId(id),"qty":portfolio.shares[index]}
+
+    portfolio = Portfolio(name=name, portfolio_content = portfolio_content, owner = username, created_at = datetime.now())
+
     try:
-        portfolios.insert_one(portfolio.serialize_asset())
+        portfolios.insert_one(portfolio.dict())
         return {"message": f"Portfolio { name } created by { username }"}
 
     except errors.DuplicateKeyError:
-        return "The portfolio already exist in the collection."
+        raise HTTPException(status_code=409, detail="The portfolio already exist in the collection.")
 
 ####################################################################################################
 #                   Useful tools
 ####################################################################################################
+
 def deserialize_asset(data):
     return Asset(
         symbol=data['symbol'],
@@ -198,5 +211,3 @@ def deserialize_asset(data):
         last_updated_by=data['last_updated_by'],
         last_updated_at=data['last_updated_at']
     )
-
-        
