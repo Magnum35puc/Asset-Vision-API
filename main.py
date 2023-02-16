@@ -6,7 +6,6 @@ from fastapi.responses import HTMLResponse
 from models.Portfolio import Portfolio
 from models.PortfolioRequest import PortfolioRequest
 from models.Asset import Asset
-import Configuration
 from typing import Union
 from bson.objectid import ObjectId
 
@@ -14,21 +13,36 @@ import jwt
 
 from pymongo import MongoClient, ReturnDocument, errors
 from pymongo.errors import PyMongoError
+from google.cloud import secretmanager
 
 
 from datetime import datetime, timedelta
 import json
 
-client = MongoClient(Configuration.mongoDB_str)
+
+
+def access_secret_version(secret_id, version_id="latest"):
+    # Create the Secret Manager client.
+    client = secretmanager.SecretManagerServiceClient()
+
+    # Build the resource name of the secret version.
+    name = f"projects/97612062608/secrets/{secret_id}/versions/{version_id}"
+    # Access the secret version.
+    response = client.access_secret_version(name=name)
+
+    # Return the decoded payload.
+    return response.payload.data.decode('UTF-8')
+
+
+
+
+client = MongoClient(access_secret_version("mongodb_str"))
 db = client.AssetVision
 assets = db.assets
 portfolios = db.portfolios
 
 app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-
-
-
 ####################################################################################################
 #                   Main Page
 ####################################################################################################
