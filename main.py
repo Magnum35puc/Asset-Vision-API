@@ -124,7 +124,7 @@ async def update_asset(asset_symbol, asset_details: str, token: str = Depends(oa
     username = payload["sub"]
     try:
         asset_details = json.loads(asset_details)
-        asset_details["last_updated_by"] = username
+        asset_details["last_updated_by"] = str(username)
         asset_details["last_updated_at"] = datetime.now()
         updated_asset = assets.find_one_and_update(
             {"symbol": asset_symbol},
