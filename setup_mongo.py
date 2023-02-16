@@ -1,7 +1,7 @@
 from pymongo import MongoClient, ASCENDING, errors
 from datetime import datetime, timedelta
 from bson.objectid import ObjectId
-from main import access_secret_version
+from utils.secret_tools import access_secret_version
 
 client = MongoClient(access_secret_version("mongodb_str"))
 db = client.AssetVision

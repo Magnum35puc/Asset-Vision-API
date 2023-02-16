@@ -3,6 +3,7 @@ from models.Asset import Asset
 from datetime import datetime, timedelta
 from bson.objectid import ObjectId
 from pydantic import BaseModel
+from utils.secret_tools import access_secret_version
 
 
 from pymongo import MongoClient
