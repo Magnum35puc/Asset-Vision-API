@@ -1,15 +1,14 @@
 from typing import List
 from models.Asset import Asset
 from datetime import datetime, timedelta
-import Configuration
 from bson.objectid import ObjectId
 from pydantic import BaseModel
 
 
 from pymongo import MongoClient
+from main import access_secret_version
 
-
-client = MongoClient(Configuration.mongoDB_str)
+client = MongoClient(access_secret_version("mongodb_str"))
 db = client.AssetVision
 assets_db = db.assets
 

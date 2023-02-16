@@ -1,9 +1,9 @@
-import Configuration
-
 from pymongo import MongoClient, ASCENDING, errors
 from datetime import datetime, timedelta
+from bson.objectid import ObjectId
+from main import access_secret_version
 
-client = MongoClient(Configuration.mongoDB_str)
+client = MongoClient(access_secret_version("mongodb_str"))
 db = client.AssetVision
 assets = db.assets
 portfolios = db.portfolios
