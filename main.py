@@ -17,6 +17,7 @@ from pymongo.errors import PyMongoError
 
 
 from datetime import datetime, timedelta
+import pytz
 import json
 
 
@@ -29,6 +30,9 @@ portfolios = db.portfolios
 
 app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+CH_timezone = pytz.timezone('Europe/Zurich')
+
 ####################################################################################################
 #                   Main Page
 ####################################################################################################
@@ -63,9 +67,9 @@ def authenticate_user(username: str, password: str):
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(CH_timezone) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.now(CH_timezone) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, "secret", algorithm="HS256")
     return encoded_jwt
@@ -97,7 +101,7 @@ async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, as
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     username = payload["sub"]
-    asset = Asset(symbol=symbol,name=name, last_price=last_price, currency=currency, asset_class=asset_class, industry=industry,last_updated_by = username, created_by = username, last_updated_at = datetime.now() , created_at = datetime.now())
+    asset = Asset(symbol=symbol,name=name, last_price=last_price, currency=currency, asset_class=asset_class, industry=industry,last_updated_by = username, created_by = username, last_updated_at = datetime.now(CH_timezone) , created_at = datetime.now(CH_timezone))
     try:
         assets.insert_one(asset.dict())
         return {"message": f"Asset { symbol } created by { username }"}
@@ -125,7 +129,7 @@ async def update_asset(asset_symbol, asset_details: str, token: str = Depends(oa
     try:
         asset_details = json.loads(asset_details)
         asset_details["last_updated_by"] = str(username)
-        asset_details["last_updated_at"] = datetime.now()
+        asset_details["last_updated_at"] = datetime.now(CH_timezone)
         updated_asset = assets.find_one_and_update(
             {"symbol": asset_symbol},
             {"$set": asset_details},
@@ -185,7 +189,7 @@ async def create_portfolio(name:str, portfolio: PortfolioRequest,  token: str = 
         id = assets.find_one({"symbol": symb})["_id"]
         portfolio_content[symb] = {"asset_id":ObjectId(id),"qty":portfolio.shares[index]}
 
-    portfolio = Portfolio(name=name, portfolio_content = portfolio_content, owner = username, created_at = datetime.now())
+    portfolio = Portfolio(name=name, portfolio_content = portfolio_content, owner = username, created_at = datetime.now(CH_timezone))
 
     try:
         portfolios.insert_one(portfolio.dict())

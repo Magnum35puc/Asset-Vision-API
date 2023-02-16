@@ -1,12 +1,13 @@
 from typing import List
-from models.Asset import Asset
-from datetime import datetime, timedelta
+from datetime import datetime
+import pytz
+
 from bson.objectid import ObjectId
 from pydantic import BaseModel
 from utils.secret_tools import access_secret_version
 
-
 from pymongo import MongoClient
+CH_timezone = pytz.timezone('Europe/Zurich')
 
 client = MongoClient(access_secret_version("mongodb_str"))
 db = client.AssetVision
@@ -18,7 +19,7 @@ class Portfolio(BaseModel):
     name: str = None
     portfolio_content: dict = {}
     created_at: datetime = None
-    last_updated_at: datetime = datetime.now()
+    last_updated_at: datetime = datetime.now(CH_timezone)
 
     def __str__(self):
         return f"{self.name} ({self.owner})"
