@@ -10,7 +10,7 @@ A RESTful API for managing portfolios using FastAPI and MongoDB Atlas.
 -   pydantic
 -   pyjwt
 -   python-multipart
--   pymongo[snappy,gssapi,srv,tls]
+-   pymongo
 
 ## How to run the API
 
