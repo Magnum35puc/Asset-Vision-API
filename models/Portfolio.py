@@ -7,7 +7,6 @@ from utils.secret_tools import access_secret_version
 
 
 from pymongo import MongoClient
-from main import access_secret_version
 
 client = MongoClient(access_secret_version("mongodb_str"))
 db = client.AssetVision
