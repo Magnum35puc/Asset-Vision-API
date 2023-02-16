@@ -155,8 +155,8 @@ async def get_all_assets(token: str = Depends(oauth2_scheme)):
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     username = payload["sub"]
     assets_list = []
-    async for asset in assets.find():
-        assets_list.append(asset)
+    for asset in assets.find():
+        assets_list.append(deserialize_asset(asset))
     return assets_list
 
 ####################################################################################################

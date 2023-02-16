@@ -1,4 +1,5 @@
 uvicorn
+gunicorn
 fastapi
 pydantic
 pyjwt
