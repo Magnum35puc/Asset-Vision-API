@@ -7,3 +7,4 @@ python-multipart
 pymongo
 google-cloud-secret-manager==2.10.0
 pytz
+bcrypt
