@@ -19,6 +19,7 @@ class Portfolio(BaseModel):
     name: str = None
     portfolio_content: list = []
     created_at: datetime = None
+    portfolio_currency: str = "USD"
     last_updated_at: datetime = datetime.now(CH_timezone)
 
     def __str__(self):

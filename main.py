@@ -1,27 +1,34 @@
+# FastAPI
 from fastapi import FastAPI, HTTPException,  Depends
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import HTMLResponse, FileResponse
 
+# Pydantic
 from models.Portfolio import Portfolio
 from models.PortfolioRequest import PortfolioRequest
 from models.Asset import Asset
+from models.ExchangeRate import ExchangeRate
 from models.User import User
-from typing import Union
-from bson.objectid import ObjectId
-from utils.secret_tools import access_secret_version
 
-import jwt
 
+# MongoDB 
 from pymongo import MongoClient, ReturnDocument, errors
 from pymongo.errors import PyMongoError
+from bson.objectid import ObjectId
 
+# GCP
+from utils.secret_tools import access_secret_version
+
+# Authentification
+import jwt
 import bcrypt
 
-
+# Others
 from datetime import datetime, timedelta
 import pytz
 import json
+from typing import Union
 
 
 
@@ -31,10 +38,21 @@ db = client.AssetVision
 assets = db.assets
 portfolios = db.portfolios
 users = db.users
+rates = db.FX_rates
 
-app = FastAPI()
+#FastAPI Configuration
+tags_metadata = [
+    {"name": "Authentification Methods", "description": "Everything you need to connect and make your first query."},
+    {"name": "Users Methods", "description": "Create and manage users."},
+    {"name": "Assets Methods", "description": "Create and manage assets."},
+    {"name": "Rates Methods", "description": "Create and manage exchange rates."},
+    {"name": "Portfolio Methods", "description": "Create and manage portfolios."},
+]
+app = FastAPI(openapi_tags=tags_metadata)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
+
+#Others
 CH_timezone = pytz.timezone('Europe/Zurich')
 
 ####################################################################################################
@@ -53,6 +71,7 @@ async def root():
 @app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
     return FileResponse("static/favicon.ico")
+
 ####################################################################################################
 #                   Documentation
 ####################################################################################################
@@ -63,10 +82,10 @@ async def custom_swagger_ui_html():
         title="AssetVision API",
         description="AssetVision API documentation",
     )
+
 ####################################################################################################
 #                   Login
 ####################################################################################################
-
 def authenticate_user(username: str, password: str):
     # logic to authenticate the user and return a user object
     # if the username and password are valid, otherwise return None
@@ -92,7 +111,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     encoded_jwt = jwt.encode(to_encode, "secret", algorithm="HS256")
     return encoded_jwt
 
-@app.post("/login")
+@app.post("/login", tags=["Authentification Methods"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
@@ -100,7 +119,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     access_token = create_access_token({"sub": form_data.username})
     return {"access_token": access_token, "token_type": "bearer"}
 
-@app.get("/sample_secured")
+@app.get("/sample_secured", tags=["Authentification Methods"])
 async def test_secured_endpoint(token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -112,7 +131,7 @@ async def test_secured_endpoint(token: str = Depends(oauth2_scheme)):
 ####################################################################################################
 #                   User interactions
 ####################################################################################################
-@app.post("/user")
+@app.post("/user", tags=["Users Methods"])
 async def create_user(username :str, password:str, email:Union[str, None],token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -128,7 +147,7 @@ async def create_user(username :str, password:str, email:Union[str, None],token:
     except errors.DuplicateKeyError:
         raise HTTPException(status_code=409, detail="The user already exist in the collection.")
 
-@app.get("/user/{username}")
+@app.get("/user/{username}", tags=["Users Methods"])
 async def read_user(username: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -138,7 +157,7 @@ async def read_user(username: str, token: str = Depends(oauth2_scheme)):
     requested_user = User(**users.find_one({"username": username}))
     return requested_user
 
-@app.put("/user/{username}")
+@app.put("/user/{username}", tags=["Users Methods"])
 async def update_user(username, user_details: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -150,7 +169,8 @@ async def update_user(username, user_details: str, token: str = Depends(oauth2_s
         if "password" in user_details.keys():
             hashed_password = bcrypt.hashpw(str(user_details["password"]).encode("utf-8"), bcrypt.gensalt())
             user_details.pop("password")
-            user_details["hashed_password"] = hashed_password
+            
+            user_details["hashed_password"] = str(hashed_password, 'UTF-8')
         updated_user = users.find_one_and_update(
             {"username": username},
             {"$set": user_details},
@@ -160,7 +180,7 @@ async def update_user(username, user_details: str, token: str = Depends(oauth2_s
     except PyMongoError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.delete("/user/{username}")
+@app.delete("/user/{username}", tags=["Users Methods"])
 async def delete_user(username: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -172,7 +192,7 @@ async def delete_user(username: str, token: str = Depends(oauth2_scheme)):
         return {"message": f"User deleted by {interactor}"}
     raise HTTPException(status_code=500, detail="Something went wrong with the deletion")
 
-@app.get("/users/")
+@app.get("/users/", tags=["Users Methods"])
 async def get_all_users(token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -183,10 +203,11 @@ async def get_all_users(token: str = Depends(oauth2_scheme)):
     for user in users.find():
         users_list.append(User(**user))
     return users_list
+
 ####################################################################################################
 #                   Unique Asset interactions
 ####################################################################################################
-@app.post("/asset")
+@app.post("/asset", tags=["Assets Methods"])
 async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, asset_class:Union[str, None] = None, industry:Union[str, None] = None,last_price:Union[float, None] = 0, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -201,7 +222,7 @@ async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, as
     except errors.DuplicateKeyError:
         raise HTTPException(status_code=409, detail="The asset already exist in the collection.")
 
-@app.get("/asset/{asset_symbol}")
+@app.get("/asset/{asset_symbol}", tags=["Assets Methods"])
 async def read_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -211,7 +232,7 @@ async def read_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     requested_asset = Asset(**assets.find_one({"symbol": asset_symbol}))
     return requested_asset
 
-@app.put("/asset/{asset_symbol}")
+@app.put("/asset/{asset_symbol}", tags=["Assets Methods"])
 async def update_asset(asset_symbol, asset_details: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -231,7 +252,7 @@ async def update_asset(asset_symbol, asset_details: str, token: str = Depends(oa
     except PyMongoError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-@app.delete("/asset/{asset_symbol}")
+@app.delete("/asset/{asset_symbol}", tags=["Assets Methods"])
 async def delete_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -243,7 +264,7 @@ async def delete_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
         return {"message": "Asset deleted"}
     raise HTTPException(status_code=500, detail="Something went wrong with the deletion")
 
-@app.get("/assets/")
+@app.get("/assets/", tags=["Assets Methods"])
 async def get_all_assets(token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -256,9 +277,91 @@ async def get_all_assets(token: str = Depends(oauth2_scheme)):
     return assets_list
 
 ####################################################################################################
+#                   Unique Rates interactions
+####################################################################################################
+@app.post("/rate", tags=["Rates Methods"])
+async def create_rate(symbol:str, last_rate:Union[float, None] = None, token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+    username = payload["sub"]
+    exchangerate = ExchangeRate(symbol=symbol,base_currency=symbol[:3], target_currency=symbol[-3:], last_rate=last_rate,last_updated_by = username, created_by = username, last_updated_at = datetime.now(CH_timezone) , created_at = datetime.now(CH_timezone))
+    inverse_exchangerate = ExchangeRate(symbol=symbol[-3:]+symbol[:3],base_currency=symbol[-3:], target_currency=symbol[:3], last_rate=1/last_rate,last_updated_by = username, created_by = username, last_updated_at = datetime.now(CH_timezone) , created_at = datetime.now(CH_timezone))
+    try:
+        rates.insert_one(exchangerate.dict())
+        rates.insert_one(inverse_exchangerate.dict())
+        return {"message": f"ExchangeRate  { symbol } and it's inverse pair created by { username }"}
+
+    except errors.DuplicateKeyError:
+        raise HTTPException(status_code=409, detail="The rate already exist in the collection.")
+
+@app.get("/rate/{rate_symbol}", tags=["Rates Methods"])
+async def read_rate(rate_symbol: str, token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+    username = payload["sub"]
+    requested_rate = ExchangeRate(**rates.find_one({"symbol": rate_symbol}))
+    return requested_rate
+
+@app.put("/rate/{rate_symbol}", tags=["Rates Methods"])
+async def update_rate(rate_symbol, rate_details: str, token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+    username = payload["sub"]
+    try:
+        rate_details = json.loads(rate_details)
+        rate_details["last_updated_by"] = str(username)
+        rate_details["last_updated_at"] = datetime.now(CH_timezone)
+        if "last_rate" in rate_details.keys():
+            inv_rate_details = {"last_rate":1/float(rate_details["last_rate"])}
+            updated_inv_rate = rates.find_one_and_update(
+            {"symbol": rate_symbol[-3:]+rate_symbol[:3]},
+            {"$set": inv_rate_details},
+            return_document=ReturnDocument.AFTER
+            )
+        updated_rate = rates.find_one_and_update(
+            {"symbol": rate_symbol},
+            {"$set": rate_details},
+            return_document=ReturnDocument.AFTER
+        )
+        return {"message": "Rates updated", "updated_rate" : ExchangeRate(**updated_rate), "inverse_rate_updated": ExchangeRate(**updated_inv_rate)}
+    except PyMongoError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+@app.delete("/rate/{rate_symbol}", tags=["Rates Methods"])
+async def delete_rate(rate_symbol: str, token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+    username = payload["sub"]
+    result = rates.delete_one({"symbol": rate_symbol})
+    if result.deleted_count >= 1:
+        return {"message": "Rate deleted"}
+    raise HTTPException(status_code=500, detail="Something went wrong with the deletion")
+
+@app.get("/rates/", tags=["Rates Methods"])
+async def get_all_rates(token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+    username = payload["sub"]
+    rates_list = []
+    for rate in rates.find():
+        rates_list.append(ExchangeRate(**rate))
+    return rates_list
+
+
+####################################################################################################
 #                   Portfolios
 ####################################################################################################
-@app.post("/portfolio")
+@app.post("/portfolio", tags=["Portfolio Methods"])
 async def create_portfolio(name:str, portfolio: PortfolioRequest,  token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
@@ -267,21 +370,20 @@ async def create_portfolio(name:str, portfolio: PortfolioRequest,  token: str = 
     username = payload["sub"]
 
     ##User input management
-    #Case Shares not filled by the user
-    if portfolio.shares == [] :
-        portfolio.shares = [0] * len(portfolio.assets_symbols)
-    if len(portfolio.assets_symbols)< len(portfolio.shares) : 
-        portfolio.shares = portfolio.shares[:len(portfolio.assets_symbols)]
     #Case Shares partially filled
     while len(portfolio.assets_symbols)> len(portfolio.shares): 
         portfolio.shares.append(0)
+    #Case cost_prices partially filled
+    while len(portfolio.assets_symbols)> len(portfolio.cost_prices): 
+        portfolio.cost_prices.append(0)  
+
     #Creation of the portfolio content
     portfolio_content= []
     for (index, symb) in enumerate(portfolio.assets_symbols) : 
         id = assets.find_one({"symbol": symb})["_id"]
-        portfolio_content.append({"asset_id":ObjectId(id),"symbol":symb,"qty":portfolio.shares[index]})
+        portfolio_content.append({"asset_id":ObjectId(id),"symbol":symb,"qty":portfolio.shares[index], "cost_prices":portfolio.cost_prices[index]})
 
-    portfolio = Portfolio(name=name, portfolio_content = portfolio_content, owner = username, created_at = datetime.now(CH_timezone))
+    portfolio = Portfolio(name=name, portfolio_content = portfolio_content, owner = username,portfolio_currency = portfolio.portfolio_currency,  created_at = datetime.now(CH_timezone))
 
     try:
         portfolios.insert_one(portfolio.dict())
@@ -290,17 +392,19 @@ async def create_portfolio(name:str, portfolio: PortfolioRequest,  token: str = 
     except errors.DuplicateKeyError:
         raise HTTPException(status_code=409, detail="The portfolio already exist in the collection.")
 
-@app.get("/portfolio/value/{portfolio_name}")
-async def get_portfolio_value(portfolio_name:str, token: str = Depends(oauth2_scheme)):
+@app.get("/portfolio/{portfolio_name}/value", tags=["Portfolio Methods"])
+async def get_portfolio_value(portfolio_name:str, owner:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     username = payload["sub"]
+    owner = owner or username
     result = portfolios.aggregate([
         {
             '$match': {
-                'name': portfolio_name
+                'name': portfolio_name,
+                'owner' : owner
             }
         }, {
             '$unwind': '$portfolio_content'
@@ -314,24 +418,105 @@ async def get_portfolio_value(portfolio_name:str, token: str = Depends(oauth2_sc
         }, {
             '$unwind': '$asset'
         }, {
+            '$addFields': {
+                'asset.exch_rate': {
+                    '$concat': [
+                        '$asset.currency', '$portfolio_currency'
+                    ]
+                }
+            }
+        }, {
+            '$lookup': {
+                'from': 'FX_rates', 
+                'localField': 'asset.exch_rate', 
+                'foreignField': 'symbol', 
+                'as': 'asset.asset_rate'
+            }
+        }, {
+            '$unwind': '$asset.asset_rate'
+        }, {
+            '$addFields': {
+                'converted_price': {
+                    '$multiply': [
+                        '$asset.last_price', '$asset.asset_rate.last_rate'
+                    ]
+                }
+            }
+        }, {
             '$group': {
                 '_id': 0, 
-                'owner': {
-                    '$first': '$owner'
-                }, 
                 'name': {
                     '$first': '$name'
                 }, 
-                'value': {
+                'owner': {
+                    '$first': '$owner'
+                }, 
+                'converted_price': {
                     '$sum': {
                         '$multiply': [
-                            '$portfolio_content.qty', '$asset.last_price'
+                            '$asset.last_price', '$asset.asset_rate.last_rate', '$portfolio_content.qty'
                         ]
+                    }
+                }, 
+                'currency': {
+                    '$first': '$portfolio_currency'
+                }
+            }
+        }, {
+            '$unset': '_id'
+        }
+    ])
+    return result.next()
+
+@app.get("/portfolio/{portfolio_name}/assets", tags=["Portfolio Methods"])
+async def get_portfolio_assets(portfolio_name:str, token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+    username = payload["sub"]
+    result = portfolios.aggregate([
+        {
+            '$match': {
+                'name': portfolio_name
+            }
+        }, {
+            '$lookup': {
+                'from': 'assets', 
+                'localField': 'portfolio_content.symbol', 
+                'foreignField': 'symbol', 
+                'as': 'assets'
+            }
+        }, {
+            '$addFields': {
+                'assets': {
+                    '$map': {
+                        'input': '$assets', 
+                        'as': 'asset', 
+                        'in': {
+                            'symbol': '$$asset.symbol', 
+                            'name': '$$asset.name', 
+                            'qty': {
+                                '$arrayElemAt': [
+                                    '$portfolio_content.qty', {
+                                        '$indexOfArray': [
+                                            '$portfolio_content.symbol', '$$asset.symbol'
+                                        ]
+                                    }
+                                ]
+                            }, 
+                            'last_price': '$$asset.last_price'
+                        }
                     }
                 }
             }
         }, {
-        '$unset': '_id'
-    }
+            '$project': {
+                '_id': 0, 
+                'owner': 1, 
+                'name': 1, 
+                'assets': 1
+            }
+        }
     ])
     return result.next()

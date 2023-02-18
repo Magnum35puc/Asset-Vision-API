@@ -8,7 +8,9 @@ db = client.AssetVision
 assets = db.assets
 portfolios = db.portfolios
 users = db.users
+rates = db.FX_rates
 
 assets.create_index([("symbol", ASCENDING)],unique=True)
 users.create_index([("username", ASCENDING)],unique=True)
+rates.create_index([("symbol", ASCENDING)],unique=True)
 portfolios.create_index([("owner", ASCENDING),("name", ASCENDING)], unique=True)
