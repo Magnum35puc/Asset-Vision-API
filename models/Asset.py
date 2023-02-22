@@ -9,6 +9,7 @@ class Asset(BaseModel):
     last_price: float = 0
     currency: str = None
     asset_class: str = None
+    geo_zone: str = None
     industry: str = None
     created_by: str = None
     created_at: datetime = None

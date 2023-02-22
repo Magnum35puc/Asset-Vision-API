@@ -31,8 +31,6 @@ import json
 from typing import Union
 
 
-
-
 client = MongoClient(access_secret_version("mongodb_str"))
 db = client.AssetVision
 assets = db.assets
@@ -213,7 +211,7 @@ async def get_all_users(token: str = Depends(oauth2_scheme)):
 #                   Unique Asset interactions
 ####################################################################################################
 @app.post("/asset", tags=["Assets Methods"])
-async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, asset_class:Union[str, None] = None, industry:Union[str, None] = None,last_price:Union[float, None] = 0, token: str = Depends(oauth2_scheme)):
+async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, asset_class:Union[str, None] = None,geo_zone:Union[str, None] = None, industry:Union[str, None] = None,last_price:Union[float, None] = 0, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
     except jwt.PyJWTError as e:
@@ -221,7 +219,7 @@ async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, as
             status_code=401, detail="Could not validate credentials"
         ) from e
     username = payload["sub"]
-    asset = Asset(symbol=symbol,name=name, last_price=last_price, currency=currency, asset_class=asset_class, industry=industry,last_updated_by = username, created_by = username, last_updated_at = datetime.now(CH_timezone) , created_at = datetime.now(CH_timezone))
+    asset = Asset(symbol=symbol,name=name, last_price=last_price, currency=currency, asset_class=asset_class,geo_zone=geo_zone, industry=industry,last_updated_by = username, created_by = username, last_updated_at = datetime.now(CH_timezone) , created_at = datetime.now(CH_timezone))
     try:
         assets.insert_one(asset.dict())
         return {"message": f"Asset { symbol } created by { username }"}
@@ -698,6 +696,101 @@ async def get_portfolio_return_by_asset_class(portfolio_name:str, owner:Union[st
         }, {
             '$group': {
                 '_id': '$asset.asset_class', 
+                'name': {
+                    '$first': '$name'
+                }, 
+                'owner': {
+                    '$first': '$owner'
+                }, 
+                'converted_price': {
+                    '$sum': {
+                        '$multiply': [
+                            '$asset.last_price', '$asset.asset_rate.last_rate', '$portfolio_content.qty'
+                        ]
+                    }
+                }, 
+                'converted_cost_price': {
+                    '$sum': {
+                        '$multiply': [
+                            '$portfolio_content.cost_prices', '$asset.asset_rate.last_rate', '$portfolio_content.qty'
+                        ]
+                    }
+                }, 
+                'currency': {
+                    '$first': '$portfolio_currency'
+                }
+            }
+        }, {
+            '$project': {
+                'asset_class': '$_id', 
+                'name': '$name', 
+                'owner': '$owner', 
+                'converted_price': '$converted_price', 
+                'converted_cost_price': '$converted_cost_price', 
+                'return': {
+                    '$divide': [
+                        {
+                            '$subtract': [
+                                '$converted_price', '$converted_cost_price'
+                            ]
+                        }, '$converted_cost_price'
+                    ]
+                }, 
+                'currency': '$currency'
+            }
+        }, {
+            '$unset': '_id'
+        }
+    ])
+    return list(result)
+
+@app.get("/portfolio/{portfolio_name}/return_by_geo_zone", tags=["Portfolio Methods"])
+async def get_portfolio_return_by_geo_zone(portfolio_name:str, owner:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+    except jwt.PyJWTError as e:
+        raise HTTPException(
+            status_code=401, detail="Could not validate credentials"
+        ) from e
+    username = payload["sub"]
+    owner = owner or username
+    result = portfolios.aggregate([
+        {
+            '$match': {
+                    'name': portfolio_name, 
+                    'owner': owner
+                }
+        }, {
+            '$unwind': '$portfolio_content'
+        }, {
+            '$lookup': {
+                'from': 'assets', 
+                'localField': 'portfolio_content.symbol', 
+                'foreignField': 'symbol', 
+                'as': 'asset'
+            }
+        }, {
+            '$unwind': '$asset'
+        }, {
+            '$addFields': {
+                'asset.exch_rate': {
+                    '$concat': [
+                        '$asset.currency', '$portfolio_currency'
+                    ]
+                }
+            }
+        }, {
+            '$lookup': {
+                'from': 'FX_rates', 
+                'localField': 'asset.exch_rate', 
+                'foreignField': 'symbol', 
+                'as': 'asset.asset_rate'
+            }
+        }, {
+            '$unwind': '$asset.asset_rate'
+        }, {
+            '$group': {
+                '_id': '$asset.geo_zone', 
                 'name': {
                     '$first': '$name'
                 }, 
