@@ -19,7 +19,7 @@ from bson.objectid import ObjectId
 
 # GCP
 from utils.secret_tools import access_secret_version
-
+secret_key = access_secret_version("hash_key")
 # Authentification
 import jwt
 import bcrypt
@@ -31,8 +31,6 @@ import json
 from typing import Union
 
 
-
-
 client = MongoClient(access_secret_version("mongodb_str"))
 db = client.AssetVision
 assets = db.assets
@@ -40,6 +38,7 @@ portfolios = db.portfolios
 users = db.users
 rates = db.FX_rates
 secret_key = access_secret_version("hash_key")
+
 
 # FastAPI Configuration
 tags_metadata = [
@@ -91,20 +90,23 @@ def authenticate_user(username: str, password: str):
     # logic to authenticate the user and return a user object
     # if the username and password are valid, otherwise return None
     user = users.find_one({"username": username})
+    if user is None:
+        return False
     try : 
          hpwd = user["hashed_password"].encode("utf-8")
     except AttributeError :
         hpwd = user["hashed_password"]
-    return bool(user and bcrypt.checkpw(password.encode("utf-8"), hpwd))
+    return bool(user and bcrypt.checkpw(password.encode("utf-8"), hpwd)) # Check if user is filled and pwd is valid
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
+    print(data)
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(CH_timezone) + expires_delta
     else:
         expire = datetime.now(CH_timezone) + timedelta(minutes=15)
     to_encode["exp"] = expire
-    return jwt.encode(to_encode, "secret", algorithm="HS256")
+    return jwt.encode(to_encode, secret_key, algorithm="HS256")
 
 @app.post("/login", tags=["Authentification Methods"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -117,7 +119,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @app.get("/sample_secured", tags=["Authentification Methods"])
 async def test_secured_endpoint(token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -132,7 +134,7 @@ async def test_secured_endpoint(token: str = Depends(oauth2_scheme)):
 @app.post("/user", tags=["Users Methods"])
 async def create_user(username :str, password:str, email:Union[str, None],token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -152,7 +154,7 @@ async def create_user(username :str, password:str, email:Union[str, None],token:
 @app.get("/user/{username}", tags=["Users Methods"])
 async def read_user(username: str, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -163,7 +165,7 @@ async def read_user(username: str, token: str = Depends(oauth2_scheme)):
 @app.put("/user/{username}", tags=["Users Methods"])
 async def update_user(username, user_details: str, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -188,7 +190,7 @@ async def update_user(username, user_details: str, token: str = Depends(oauth2_s
 @app.delete("/user/{username}", tags=["Users Methods"])
 async def delete_user(username: str, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -202,7 +204,7 @@ async def delete_user(username: str, token: str = Depends(oauth2_scheme)):
 @app.get("/users/", tags=["Users Methods"])
 async def get_all_users(token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -214,15 +216,15 @@ async def get_all_users(token: str = Depends(oauth2_scheme)):
 #                   Unique Asset interactions
 ####################################################################################################
 @app.post("/asset", tags=["Assets Methods"])
-async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, asset_class:Union[str, None] = None, industry:Union[str, None] = None,last_price:Union[float, None] = 0, token: str = Depends(oauth2_scheme)):
+async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, asset_class:Union[str, None] = None,geo_zone:Union[str, None] = None, industry:Union[str, None] = None,last_price:Union[float, None] = 0, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
         ) from e
     username = payload["sub"]
-    asset = Asset(symbol=symbol,name=name, last_price=last_price, currency=currency, asset_class=asset_class, industry=industry,last_updated_by = username, created_by = username, last_updated_at = datetime.now(CH_timezone) , created_at = datetime.now(CH_timezone))
+    asset = Asset(symbol=symbol,name=name, last_price=last_price, currency=currency, asset_class=asset_class,geo_zone=geo_zone, industry=industry,last_updated_by = username, created_by = username, last_updated_at = datetime.now(CH_timezone) , created_at = datetime.now(CH_timezone))
     try:
         assets.insert_one(asset.dict())
         return {"message": f"Asset { symbol } created by { username }"}
@@ -235,7 +237,7 @@ async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, as
 @app.get("/asset/{asset_symbol}", tags=["Assets Methods"])
 async def read_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -246,7 +248,7 @@ async def read_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
 @app.put("/asset/{asset_symbol}", tags=["Assets Methods"])
 async def update_asset(asset_symbol, asset_details: str, to_convert_from:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -275,7 +277,7 @@ async def update_asset(asset_symbol, asset_details: str, to_convert_from:Union[s
 @app.delete("/asset/{asset_symbol}", tags=["Assets Methods"])
 async def delete_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -289,7 +291,7 @@ async def delete_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
 @app.get("/assets/", tags=["Assets Methods"])
 async def get_all_assets(token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -303,7 +305,7 @@ async def get_all_assets(token: str = Depends(oauth2_scheme)):
 @app.post("/rate", tags=["Rates Methods"])
 async def create_rate(symbol:str, last_rate:Union[float, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -324,7 +326,7 @@ async def create_rate(symbol:str, last_rate:Union[float, None] = None, token: st
 @app.get("/rate/{rate_symbol}", tags=["Rates Methods"])
 async def read_rate(rate_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -335,7 +337,7 @@ async def read_rate(rate_symbol: str, token: str = Depends(oauth2_scheme)):
 @app.put("/rate/{rate_symbol}", tags=["Rates Methods"])
 async def update_rate(rate_symbol, rate_details: str, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -364,7 +366,7 @@ async def update_rate(rate_symbol, rate_details: str, token: str = Depends(oauth
 @app.delete("/rate/{rate_symbol}", tags=["Rates Methods"])
 async def delete_rate(rate_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -378,7 +380,7 @@ async def delete_rate(rate_symbol: str, token: str = Depends(oauth2_scheme)):
 @app.get("/rates/", tags=["Rates Methods"])
 async def get_all_rates(token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -393,7 +395,7 @@ async def get_all_rates(token: str = Depends(oauth2_scheme)):
 @app.post("/portfolio", tags=["Portfolio Methods"])
 async def create_portfolio(name:str, portfolio: PortfolioRequest,  token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -429,7 +431,7 @@ async def create_portfolio(name:str, portfolio: PortfolioRequest,  token: str = 
 @app.get("/portfolio/{portfolio_name}/value", tags=["Portfolio Methods"])
 async def get_portfolio_value(portfolio_name:str, owner:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -499,7 +501,7 @@ async def get_portfolio_value(portfolio_name:str, owner:Union[str, None] = None,
 @app.get("/portfolio/{portfolio_name}/cost", tags=["Portfolio Methods"])
 async def get_portfolio_cost(portfolio_name:str, owner:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -569,7 +571,7 @@ async def get_portfolio_cost(portfolio_name:str, owner:Union[str, None] = None, 
 @app.get("/portfolio/{portfolio_name}/total_return", tags=["Portfolio Methods"])
 async def get_portfolio_total_return(portfolio_name:str, owner:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -662,7 +664,7 @@ async def get_portfolio_total_return(portfolio_name:str, owner:Union[str, None] 
 @app.get("/portfolio/{portfolio_name}/return_by_asset_class", tags=["Portfolio Methods"])
 async def get_portfolio_return_by_asset_class(portfolio_name:str, owner:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -754,10 +756,105 @@ async def get_portfolio_return_by_asset_class(portfolio_name:str, owner:Union[st
     ])
     return list(result)
 
+@app.get("/portfolio/{portfolio_name}/return_by_geo_zone", tags=["Portfolio Methods"])
+async def get_portfolio_return_by_geo_zone(portfolio_name:str, owner:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+    except jwt.PyJWTError as e:
+        raise HTTPException(
+            status_code=401, detail="Could not validate credentials"
+        ) from e
+    username = payload["sub"]
+    owner = owner or username
+    result = portfolios.aggregate([
+        {
+            '$match': {
+                    'name': portfolio_name, 
+                    'owner': owner
+                }
+        }, {
+            '$unwind': '$portfolio_content'
+        }, {
+            '$lookup': {
+                'from': 'assets', 
+                'localField': 'portfolio_content.symbol', 
+                'foreignField': 'symbol', 
+                'as': 'asset'
+            }
+        }, {
+            '$unwind': '$asset'
+        }, {
+            '$addFields': {
+                'asset.exch_rate': {
+                    '$concat': [
+                        '$asset.currency', '$portfolio_currency'
+                    ]
+                }
+            }
+        }, {
+            '$lookup': {
+                'from': 'FX_rates', 
+                'localField': 'asset.exch_rate', 
+                'foreignField': 'symbol', 
+                'as': 'asset.asset_rate'
+            }
+        }, {
+            '$unwind': '$asset.asset_rate'
+        }, {
+            '$group': {
+                '_id': '$asset.geo_zone', 
+                'name': {
+                    '$first': '$name'
+                }, 
+                'owner': {
+                    '$first': '$owner'
+                }, 
+                'converted_price': {
+                    '$sum': {
+                        '$multiply': [
+                            '$asset.last_price', '$asset.asset_rate.last_rate', '$portfolio_content.qty'
+                        ]
+                    }
+                }, 
+                'converted_cost_price': {
+                    '$sum': {
+                        '$multiply': [
+                            '$portfolio_content.cost_prices', '$asset.asset_rate.last_rate', '$portfolio_content.qty'
+                        ]
+                    }
+                }, 
+                'currency': {
+                    '$first': '$portfolio_currency'
+                }
+            }
+        }, {
+            '$project': {
+                'asset_class': '$_id', 
+                'name': '$name', 
+                'owner': '$owner', 
+                'converted_price': '$converted_price', 
+                'converted_cost_price': '$converted_cost_price', 
+                'return': {
+                    '$divide': [
+                        {
+                            '$subtract': [
+                                '$converted_price', '$converted_cost_price'
+                            ]
+                        }, '$converted_cost_price'
+                    ]
+                }, 
+                'currency': '$currency'
+            }
+        }, {
+            '$unset': '_id'
+        }
+    ])
+    return list(result)
+
 @app.get("/portfolio/{portfolio_name}/assets", tags=["Portfolio Methods"])
 async def get_portfolio_assets(portfolio_name:str, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -842,7 +939,7 @@ async def get_user_portfolios(username:Union[str, None] = None, token: str = Dep
 @app.put("/portfolio/{portfolio_name}/buy/{symbol}", tags=["Portfolio Methods"])
 async def buy_asset_in_portfolio(portfolio_name: str, symbol: str, qty: float, cost_price:Union[float, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
@@ -881,7 +978,7 @@ async def buy_asset_in_portfolio(portfolio_name: str, symbol: str, qty: float, c
 @app.put("/portfolio/{portfolio_name}/sell/{symbol}", tags=["Portfolio Methods"])
 async def sell_asset_in_portfolio(portfolio_name: str, symbol: str, qty: float, sell_price:Union[float, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
-        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=401, detail="Could not validate credentials"
