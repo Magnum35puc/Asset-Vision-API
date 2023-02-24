@@ -39,6 +39,7 @@ assets = db.assets
 portfolios = db.portfolios
 users = db.users
 rates = db.FX_rates
+secret_key = access_secret_version("hash_key")
 
 # FastAPI Configuration
 tags_metadata = [
@@ -243,7 +244,7 @@ async def read_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     return Asset(**assets.find_one({"symbol": asset_symbol}))
 
 @app.put("/asset/{asset_symbol}", tags=["Assets Methods"])
-async def update_asset(asset_symbol, asset_details: str, token: str = Depends(oauth2_scheme)):
+async def update_asset(asset_symbol, asset_details: str, to_convert_from:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, "secret", algorithms=["HS256"])
     except jwt.PyJWTError as e:
@@ -255,6 +256,13 @@ async def update_asset(asset_symbol, asset_details: str, token: str = Depends(oa
         asset_details = json.loads(asset_details)
         asset_details["last_updated_by"] = str(username)
         asset_details["last_updated_at"] = datetime.now(CH_timezone)
+        if to_convert_from and "last_price" in asset_details.keys(): 
+            asset_currency = assets.find_one({"symbol": asset_symbol})["currency"]
+            conv_rate = rates.find_one({"symbol": to_convert_from+asset_currency})["last_rate"]
+            try:
+                asset_details["last_price"] *= conv_rate
+            except TypeError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
         updated_asset = assets.find_one_and_update(
             {"symbol": asset_symbol},
             {"$set": asset_details},
@@ -810,6 +818,27 @@ async def get_portfolio_assets(portfolio_name:str, token: str = Depends(oauth2_s
 ])
     return result.next()
 
+@app.get("/portfolio/{username}", tags=["Portfolio Methods"])
+async def get_user_portfolios(username:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+    except jwt.PyJWTError as e:
+        raise HTTPException(
+            status_code=401, detail="Could not validate credentials"
+        ) from e
+    if username is None :     
+        username = payload["sub"]
+    result_mdb = portfolios.find({
+        'owner': username
+    })
+    users_portfolios = []
+    for res in  result_mdb : 
+        res.pop("_id",None)
+        for d in res["portfolio_content"]:
+            d.pop("asset_id",None)
+        users_portfolios.append(res)
+    return users_portfolios
+
 @app.put("/portfolio/{portfolio_name}/buy/{symbol}", tags=["Portfolio Methods"])
 async def buy_asset_in_portfolio(portfolio_name: str, symbol: str, qty: float, cost_price:Union[float, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
@@ -884,6 +913,29 @@ async def sell_asset_in_portfolio(portfolio_name: str, symbol: str, qty: float, 
     )
     return {"message": f"Asset {symbol} updated successfully in portfolio {portfolio_name}."}
 
-
-
+@app.put("/portfolio/{portfolio_name}", tags=["Portfolio Methods"])
+async def update_portfolio_no_assets(portfolio_name:str, portfolio_details: str, token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+    except jwt.PyJWTError as e:
+        raise HTTPException(
+            status_code=401, detail="Could not validate credentials"
+        ) from e
+    username = payload["sub"]
+    try:
+        portfolio_details = json.loads(portfolio_details)
+        portfolio_details["last_updated_at"] = datetime.now(CH_timezone)
+        portfolio_details.pop("created_at",None)
+        portfolio_details.pop("portfolio_content",None)
+        updated_portfolio = portfolios.find_one_and_update(
+            {"name": portfolio_name},
+            {"$set": portfolio_details},
+            return_document=ReturnDocument.AFTER
+        )
+        updated_portfolio.pop("_id",None)
+        for d in updated_portfolio["portfolio_content"]:
+            d.pop("asset_id",None)
+        return {"message": "Portfolio updated", "updated_portfolio" : updated_portfolio}
+    except PyMongoError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
