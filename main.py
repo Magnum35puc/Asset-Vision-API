@@ -39,6 +39,7 @@ assets = db.assets
 portfolios = db.portfolios
 users = db.users
 rates = db.FX_rates
+secret_key =access_secret_version("hash_key")
 
 # FastAPI Configuration
 tags_metadata = [
@@ -94,7 +95,7 @@ def authenticate_user(username: str, password: str):
          hpwd = user["hashed_password"].encode("utf-8")
     except AttributeError :
         hpwd = user["hashed_password"]
-    return bool(user and bcrypt.checkpw(password.encode("utf-8"), hpwd))
+    return bool(user and bcrypt.checkpw(password.encode("utf-8"), hpwd)) # Check if user is filled and pwd is valid
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
