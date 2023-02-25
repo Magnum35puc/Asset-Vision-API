@@ -19,7 +19,6 @@ from bson.objectid import ObjectId
 
 # GCP
 from utils.secret_tools import access_secret_version
-secret_key = access_secret_version("hash_key")
 # Authentification
 import jwt
 import bcrypt
@@ -32,12 +31,12 @@ from typing import Union
 
 
 client = MongoClient(access_secret_version("mongodb_str"))
+secret_key = access_secret_version("hash_key")
 db = client.AssetVision
 assets = db.assets
 portfolios = db.portfolios
 users = db.users
 rates = db.FX_rates
-secret_key = access_secret_version("hash_key")
 
 
 # FastAPI Configuration
@@ -99,7 +98,6 @@ def authenticate_user(username: str, password: str):
     return bool(user and bcrypt.checkpw(password.encode("utf-8"), hpwd)) # Check if user is filled and pwd is valid
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
-    print(data)
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(CH_timezone) + expires_delta
@@ -127,7 +125,22 @@ async def test_secured_endpoint(token: str = Depends(oauth2_scheme)):
     username = payload["sub"]
 
     return {"message": f"Welcome to the secure endpoint {username}"}
+####################################################################################################
+#                   Administration
+####################################################################################################
+async def get_user_roles(token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+    except jwt.PyJWTError as e:
+        raise HTTPException(
+            status_code=401, detail="Could not validate credentials"
+        ) from e
+    User_object = User(**users.find_one({"username": payload["sub"]})) # Get the User object currently connected
+    return User_object.roles
 
+def is_admin(current_user = Depends(get_user_roles)):
+    if "admin" not in current_user:
+        raise HTTPException(status_code=403, detail="Admin permissions required")
 ####################################################################################################
 #                   User interactions
 ####################################################################################################
@@ -162,7 +175,7 @@ async def read_user(username: str, token: str = Depends(oauth2_scheme)):
     reader = payload["sub"]
     return User(**users.find_one({"username": username}))
 
-@app.put("/user/{username}", tags=["Users Methods"])
+@app.put("/user/{username}", tags=["Users Methods"], dependencies=[Depends(is_admin)])
 async def update_user(username, user_details: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
