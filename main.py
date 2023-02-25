@@ -200,7 +200,7 @@ async def update_user(username, user_details: str, token: str = Depends(oauth2_s
     except PyMongoError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-@app.delete("/user/{username}", tags=["Users Methods"])
+@app.delete("/user/{username}", tags=["Users Methods"], dependencies=[Depends(is_admin)])
 async def delete_user(username: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -228,7 +228,7 @@ async def get_all_users(token: str = Depends(oauth2_scheme)):
 ####################################################################################################
 #                   Unique Asset interactions
 ####################################################################################################
-@app.post("/asset", tags=["Assets Methods"])
+@app.post("/asset", tags=["Assets Methods"], dependencies=[Depends(is_admin)])
 async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, asset_class:Union[str, None] = None,geo_zone:Union[str, None] = None, industry:Union[str, None] = None,last_price:Union[float, None] = 0, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -258,7 +258,7 @@ async def read_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     username = payload["sub"]
     return Asset(**assets.find_one({"symbol": asset_symbol}))
 
-@app.put("/asset/{asset_symbol}", tags=["Assets Methods"])
+@app.put("/asset/{asset_symbol}", tags=["Assets Methods"], dependencies=[Depends(is_admin)])
 async def update_asset(asset_symbol, asset_details: str, to_convert_from:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -287,7 +287,7 @@ async def update_asset(asset_symbol, asset_details: str, to_convert_from:Union[s
     except PyMongoError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     
-@app.delete("/asset/{asset_symbol}", tags=["Assets Methods"])
+@app.delete("/asset/{asset_symbol}", tags=["Assets Methods"], dependencies=[Depends(is_admin)])
 async def delete_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -315,7 +315,7 @@ async def get_all_assets(token: str = Depends(oauth2_scheme)):
 ####################################################################################################
 #                   Unique Rates interactions
 ####################################################################################################
-@app.post("/rate", tags=["Rates Methods"])
+@app.post("/rate", tags=["Rates Methods"], dependencies=[Depends(is_admin)])
 async def create_rate(symbol:str, last_rate:Union[float, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -347,7 +347,7 @@ async def read_rate(rate_symbol: str, token: str = Depends(oauth2_scheme)):
     username = payload["sub"]
     return ExchangeRate(**rates.find_one({"symbol": rate_symbol}))
 
-@app.put("/rate/{rate_symbol}", tags=["Rates Methods"])
+@app.put("/rate/{rate_symbol}", tags=["Rates Methods"], dependencies=[Depends(is_admin)])
 async def update_rate(rate_symbol, rate_details: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -376,7 +376,7 @@ async def update_rate(rate_symbol, rate_details: str, token: str = Depends(oauth
     except PyMongoError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     
-@app.delete("/rate/{rate_symbol}", tags=["Rates Methods"])
+@app.delete("/rate/{rate_symbol}", tags=["Rates Methods"], dependencies=[Depends(is_admin)])
 async def delete_rate(rate_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
