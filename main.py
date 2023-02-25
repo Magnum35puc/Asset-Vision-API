@@ -19,7 +19,6 @@ from bson.objectid import ObjectId
 
 # GCP
 from utils.secret_tools import access_secret_version
-secret_key = access_secret_version("hash_key")
 # Authentification
 import jwt
 import bcrypt
@@ -32,12 +31,12 @@ from typing import Union
 
 
 client = MongoClient(access_secret_version("mongodb_str"))
+secret_key = access_secret_version("hash_key")
 db = client.AssetVision
 assets = db.assets
 portfolios = db.portfolios
 users = db.users
 rates = db.FX_rates
-secret_key = access_secret_version("hash_key")
 
 
 # FastAPI Configuration
@@ -99,7 +98,6 @@ def authenticate_user(username: str, password: str):
     return bool(user and bcrypt.checkpw(password.encode("utf-8"), hpwd)) # Check if user is filled and pwd is valid
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
-    print(data)
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(CH_timezone) + expires_delta
@@ -127,7 +125,22 @@ async def test_secured_endpoint(token: str = Depends(oauth2_scheme)):
     username = payload["sub"]
 
     return {"message": f"Welcome to the secure endpoint {username}"}
+####################################################################################################
+#                   Administration
+####################################################################################################
+async def get_user_roles(token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+    except jwt.PyJWTError as e:
+        raise HTTPException(
+            status_code=401, detail="Could not validate credentials"
+        ) from e
+    User_object = User(**users.find_one({"username": payload["sub"]})) # Get the User object currently connected
+    return User_object.roles
 
+def is_admin(current_user = Depends(get_user_roles)):
+    if "admin" not in current_user:
+        raise HTTPException(status_code=403, detail="Admin permissions required")
 ####################################################################################################
 #                   User interactions
 ####################################################################################################
@@ -162,7 +175,7 @@ async def read_user(username: str, token: str = Depends(oauth2_scheme)):
     reader = payload["sub"]
     return User(**users.find_one({"username": username}))
 
-@app.put("/user/{username}", tags=["Users Methods"])
+@app.put("/user/{username}", tags=["Users Methods"], dependencies=[Depends(is_admin)])
 async def update_user(username, user_details: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -187,7 +200,7 @@ async def update_user(username, user_details: str, token: str = Depends(oauth2_s
     except PyMongoError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-@app.delete("/user/{username}", tags=["Users Methods"])
+@app.delete("/user/{username}", tags=["Users Methods"], dependencies=[Depends(is_admin)])
 async def delete_user(username: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -215,7 +228,7 @@ async def get_all_users(token: str = Depends(oauth2_scheme)):
 ####################################################################################################
 #                   Unique Asset interactions
 ####################################################################################################
-@app.post("/asset", tags=["Assets Methods"])
+@app.post("/asset", tags=["Assets Methods"], dependencies=[Depends(is_admin)])
 async def create_asset(symbol:str,name:str, currency:Union[str, None] = None, asset_class:Union[str, None] = None,geo_zone:Union[str, None] = None, industry:Union[str, None] = None,last_price:Union[float, None] = 0, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -245,7 +258,7 @@ async def read_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     username = payload["sub"]
     return Asset(**assets.find_one({"symbol": asset_symbol}))
 
-@app.put("/asset/{asset_symbol}", tags=["Assets Methods"])
+@app.put("/asset/{asset_symbol}", tags=["Assets Methods"], dependencies=[Depends(is_admin)])
 async def update_asset(asset_symbol, asset_details: str, to_convert_from:Union[str, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -274,7 +287,7 @@ async def update_asset(asset_symbol, asset_details: str, to_convert_from:Union[s
     except PyMongoError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     
-@app.delete("/asset/{asset_symbol}", tags=["Assets Methods"])
+@app.delete("/asset/{asset_symbol}", tags=["Assets Methods"], dependencies=[Depends(is_admin)])
 async def delete_asset(asset_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -302,7 +315,7 @@ async def get_all_assets(token: str = Depends(oauth2_scheme)):
 ####################################################################################################
 #                   Unique Rates interactions
 ####################################################################################################
-@app.post("/rate", tags=["Rates Methods"])
+@app.post("/rate", tags=["Rates Methods"], dependencies=[Depends(is_admin)])
 async def create_rate(symbol:str, last_rate:Union[float, None] = None, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -334,7 +347,7 @@ async def read_rate(rate_symbol: str, token: str = Depends(oauth2_scheme)):
     username = payload["sub"]
     return ExchangeRate(**rates.find_one({"symbol": rate_symbol}))
 
-@app.put("/rate/{rate_symbol}", tags=["Rates Methods"])
+@app.put("/rate/{rate_symbol}", tags=["Rates Methods"], dependencies=[Depends(is_admin)])
 async def update_rate(rate_symbol, rate_details: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
@@ -363,7 +376,7 @@ async def update_rate(rate_symbol, rate_details: str, token: str = Depends(oauth
     except PyMongoError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     
-@app.delete("/rate/{rate_symbol}", tags=["Rates Methods"])
+@app.delete("/rate/{rate_symbol}", tags=["Rates Methods"], dependencies=[Depends(is_admin)])
 async def delete_rate(rate_symbol: str, token: str = Depends(oauth2_scheme)):
     try:        
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
