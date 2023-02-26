@@ -1049,3 +1049,34 @@ async def update_portfolio_no_assets(portfolio_name:str, portfolio_details: str,
     except PyMongoError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
+@app.delete("/portfolio/{portfolio_name}", tags=["Portfolio Methods"], dependencies=[Depends(is_admin)])
+async def delete_portfolio(portfolio_name: str, token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+    except jwt.PyJWTError as e:
+        raise HTTPException(
+            status_code=401, detail="Could not validate credentials"
+        ) from e
+    username = payload["sub"]
+    result = portfolios.delete_one({"name": portfolio_name})
+    if result.deleted_count >= 1:
+        return {"message": "Portfolio deleted"}
+    raise HTTPException(status_code=500, detail="Something went wrong with the deletion")
+
+@app.get("/portfolios/", tags=["Portfolio Methods"])
+async def get_all_portfolios(token: str = Depends(oauth2_scheme)):
+    try:        
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+    except jwt.PyJWTError as e:
+        raise HTTPException(
+            status_code=401, detail="Could not validate credentials"
+        ) from e
+    username = payload["sub"]
+    result_mdb = portfolios.find({}, {"_id": 0})
+    all_portfolios = []
+    for res in  result_mdb : 
+        for d in res["portfolio_content"]:
+            d.pop("asset_id",None)
+        all_portfolios.append(res)
+    return all_portfolios
+
